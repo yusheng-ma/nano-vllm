@@ -108,7 +108,12 @@ class ModelRunner:
         block_bytes = 2 * hf_config.num_hidden_layers * self.block_size * num_kv_heads * hf_config.head_dim * hf_config.torch_dtype.itemsize
         config.num_kvcache_blocks = int(total * config.gpu_memory_utilization - used - peak + current) // block_bytes
         assert config.num_kvcache_blocks > 0
+        before = torch.cuda.memory_allocated()
         self.kv_cache = torch.empty(2, hf_config.num_hidden_layers, config.num_kvcache_blocks, self.block_size, num_kv_heads, hf_config.head_dim)
+        kv_cache_memory_gb = self.kv_cache.numel() * self.kv_cache.element_size() / 1024**3
+        print(f"KV Cache 已分配: {kv_cache_memory_gb:.2f} GB")
+        after = torch.cuda.memory_allocated()
+        print(f"KV Cache 分配實際增加: {(after - before) / 1024**3:.2f} GB")
         layer_id = 0
         for module in self.model.modules():
             if hasattr(module, "k_cache") and hasattr(module, "v_cache"):
@@ -119,6 +124,9 @@ class ModelRunner:
     def prepare_block_tables(self, seqs: list[Sequence]):
         max_len = max(len(seq.block_table) for seq in seqs)
         block_tables = [seq.block_table + [-1] * (max_len - len(seq.block_table)) for seq in seqs]
+        print("-" * 20)
+        for bt, seq in zip(block_tables, seqs):
+            print(seq.seq_id, bt)
         block_tables = torch.tensor(block_tables, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
         return block_tables
 
