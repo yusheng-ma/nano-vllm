@@ -7,9 +7,9 @@ from nanovllm import LLM, SamplingParams
 
 def main():
     seed(0)
-    num_seqs = 256
-    max_input_len = 1024
-    max_ouput_len = 1024
+    num_seqs = 1
+    max_input_len = 128
+    max_ouput_len = 128
 
     path = os.path.expanduser("~/huggingface/Qwen3-0.6B/")
     llm = LLM(path, enforce_eager=False, max_model_len=4096)
@@ -19,7 +19,8 @@ def main():
     # uncomment the following line for vllm
     # prompt_token_ids = [dict(prompt_token_ids=p) for p in prompt_token_ids]
 
-    llm.generate(["Benchmark: "], SamplingParams())
+    # llm.generate(["Benchmark: "], SamplingParams()) # warm up... skipp!
+    print('{' + f'"num_seqs": {num_seqs}' + '}')
     t = time.time()
     llm.generate(prompt_token_ids, sampling_params, use_tqdm=False)
     t = (time.time() - t)
