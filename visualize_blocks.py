@@ -1,8 +1,7 @@
 # visualize_blocks.py
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import re
 import json
+import re
+import os
 
 
 def parse_output_file(filename):
@@ -69,141 +68,265 @@ def parse_output_file(filename):
 
     max_seq_id = max(all_seq_ids) if all_seq_ids else 0
     min_seq_id = min(all_seq_ids) if all_seq_ids else 0
-    print(f"🆔 Observed seq_ids: {sorted(all_seq_ids)} → setting cmax={max_seq_id}")
+    print(f"🆔 Observed seq_ids: {sorted(all_seq_ids)}")
 
-    return all_steps, num_kv_cache_block, max_seq_id
+    return all_steps, num_kv_cache_block
 
 
-def visualize_with_plotly(all_steps, num_blocks=696, cols=30):
+def generate_html_visualization(all_steps, num_blocks, cols=10):
     rows = (num_blocks + cols - 1) // cols
 
-    # 建立座標
-    x_coords = [block_idx % cols for block_idx in range(num_blocks)]
-    y_coords = [block_idx // cols for block_idx in range(num_blocks)]
+    # Prepare data for JS
+    steps_data = []
+    for step_data in all_steps:
+        grid = [-1] * num_blocks  # -1 means free
+        for block_idx, seq_id in step_data.items():
+            if block_idx < num_blocks:
+                grid[block_idx] = seq_id
+        steps_data.append(grid)
 
-    fig = go.Figure()
+    # Generate JS array
+    js_steps_data = json.dumps(steps_data)
+    total_steps = len(all_steps)
 
-    # 初始狀態：全部 free → neutral background
-    initial_colors = ['#f0f0f0' if i < num_blocks else '#ffffff' for i in range(num_blocks)]  # light gray for valid blocks
-    initial_texts = [''] * num_blocks
-    hovertext = [f"Block {i}" for i in range(num_blocks)]
+    # Generate HTML with embedded JS
+    html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>KV Cache Block Visualizer</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background-color: #fafafa;
+            color: #333;
+        }}
+        #container {{
+            display: inline-block;
+            margin-top: 20px;
+        }}
+        .grid {{
+            display: grid;
+            grid-template-columns: repeat({cols}, 30px);
+            gap: 2px;
+            margin-bottom: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }}
+        .block {{
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            border: 1px solid #ddd;
+            background-color: white;
+            cursor: default;
+            transition: all 0.2s ease;
+        }}
+        .block.occupied {{
+            background-color: #e9e9e9;
+            font-weight: bold;
+        }}
+        .controls {{
+            margin: 20px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }}
+        button {{
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+            background: #f8f8f8;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }}
+        button:hover {{
+            background: #e8e8e8;
+        }}
+        button:disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
+        }}
+        button.playing {{
+            background: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }}
+        #step-display {{
+            font-size: 18px;
+            font-weight: bold;
+            margin: 0 10px;
+            min-width: 120px;
+            text-align: center;
+        }}
+        #slider {{
+            width: 100%;
+            max-width: 600px;
+        }}
+        .slider-container {{
+            width: 100%;
+            max-width: 600px;
+            margin: 10px 0;
+        }}
+        h2 {{
+            color: #2c3e50;
+        }}
+    </style>
+</head>
+<body>
+    <h2>KV Cache Block Table</h2>
+    <div class="controls">
+        <button id="btn-first" title="First Step">⏮️ First</button>
+        <button id="btn-prev" title="Previous Step">⬅️ Back</button>
+        <button id="btn-play" title="Play/Pause">▶️ Play</button>
+        <button id="btn-next" title="Next Step">➡️ Next</button>
+        <button id="btn-last" title="Last Step">⏭️ Last</button>
+        <span id="step-display">Step 0 / {total_steps - 1}</span>
+    </div>
 
-    # 使用固定灰色背景，無 colorscale
-    fig.add_trace(
-        go.Scatter(
-            x=x_coords,
-            y=y_coords,
-            mode='markers+text',
-            marker=dict(
-                size=20,
-                color=initial_colors,  # fixed light gray
-                line=dict(width=1, color='lightgray')
-            ),
-            text=initial_texts,
-            textfont=dict(size=12, color='black', family="Courier New"),
-            hovertext=hovertext,
-            hoverinfo='text',
-            showlegend=False
-        )
-    )
+    <div class="slider-container">
+        <input type="range" id="slider" min="0" max="{total_steps - 1}" value="0" step="1">
+    </div>
 
-    # 建立 frames
-    frames = []
-    for step_idx, step_data in enumerate(all_steps):
-        colors = []
-        texts = []
-        hovertext = []
-        for block_idx in range(num_blocks):
-            if block_idx in step_data:
-                seq_id = step_data[block_idx]
-                colors.append('#e3e3e3')  # soft gray background for occupied
-                texts.append(str(seq_id))
-                hovertext.append(f"Block {block_idx} | Seq ID: {seq_id}")
-            else:
-                colors.append('#ffffff')  # white for free
-                texts.append('')
-                hovertext.append(f"Block {block_idx} | Free")
+    <div id="container">
+        <div id="grid" class="grid"></div>
+    </div>
 
-        frame_name = f"frame{step_idx}"
-        frames.append(
-            go.Frame(
-                name=frame_name,
-                data=[
-                    go.Scatter(
-                        marker=dict(color=colors, line=dict(width=1, color='lightgray')),
-                        text=texts,
-                        hovertext=hovertext
-                    )
-                ],
-                layout=go.Layout(title=f"Step {step_idx} / {len(all_steps)-1}")
-            )
-        )
+    <script>
+        const stepsData = {js_steps_data};
+        const numBlocks = {num_blocks};
+        const cols = {cols};
+        let currentStep = 0;
+        let isPlaying = false;
+        let playInterval = null;
+        const playSpeed = 200; // ms per frame
 
-    fig.frames = frames
+        function renderGrid() {{
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            grid.style.gridTemplateColumns = `repeat(${{cols}}, 30px)`;
 
-    # Layout
-    fig.update_layout(
-        title=f"KV Cache Block Table: Seq ID Only (Step 0 / {len(all_steps)-1})",
-        xaxis=dict(range=[-0.5, cols - 0.5], showgrid=False, zeroline=False, visible=False),
-        yaxis=dict(range=[-0.5, rows - 0.5], showgrid=False, zeroline=False, visible=False, scaleanchor='x', scaleratio=1),
-        width=1400,
-        height=max(600, rows * 25),  # auto-adjust height based on rows
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        margin=dict(l=20, r=20, t=60, b=100),
-        updatemenus=[{
-            "type": "buttons",
-            "showactive": False,
-            "y": -0.1,
-            "x": 0.1,
-            "xanchor": "right",
-            "buttons": [{
-                "label": "▶️ Play",
-                "method": "animate",
-                "args": [None, {
-                    "frame": {"duration": 200, "redraw": True},
-                    "mode": "immediate",
-                    "fromcurrent": True,
-                    "transition": {"duration": 0}
-                }]
-            }, {
-                "label": "⏸️ Pause",
-                "method": "animate",
-                "args": [[None], {
-                    "frame": {"duration": 0, "redraw": True},
-                    "mode": "immediate",
-                    "transition": {"duration": 0}
-                }]
-            }]
-        }],
-        sliders=[{
-            "currentvalue": {"prefix": "Step: ", "font": {"size": 16}},
-            "steps": [
-                {
-                    "args": [[f"frame{step_idx}"], {
-                        "frame": {"duration": 0, "redraw": True},
-                        "mode": "immediate",
-                        "transition": {"duration": 0}
-                    }],
-                    "label": str(step_idx),
-                    "method": "animate"
-                } for step_idx in range(len(all_steps))
-            ],
-            "x": 0.1,
-            "len": 0.8,
-            "y": -0.15,
-            "yanchor": "top",
-            "xanchor": "left"
-        }]
-    )
+            const data = stepsData[currentStep];
+            for (let i = 0; i < numBlocks; i++) {{
+                const block = document.createElement('div');
+                block.className = 'block';
+                if (data[i] !== -1) {{
+                    block.classList.add('occupied');
+                    block.textContent = data[i];
+                    block.title = `Block ${{i}} | Seq ID: ${{data[i]}}`;
+                }} else {{
+                    block.title = `Block ${{i}} | Free`;
+                }}
+                grid.appendChild(block);
+            }}
 
-    fig.write_html("block_visualization.html", auto_open=True)
-    print(f"✅ 成功生成視覺化檔案！")
-    print(f"📍 已儲存為: block_visualization.html")
+            document.getElementById('step-display').textContent = `Step ${{currentStep}} / {total_steps - 1}`;
+            document.getElementById('slider').value = currentStep;
+
+            // Update button states
+            document.getElementById('btn-prev').disabled = currentStep === 0;
+            document.getElementById('btn-next').disabled = currentStep === {total_steps - 1};
+        }}
+
+        function goToStep(step) {{
+            currentStep = step;
+            renderGrid();
+        }}
+
+        function stepForward() {{
+            if (currentStep < {total_steps - 1}) {{
+                currentStep++;
+                renderGrid();
+            }}
+        }}
+
+        function stepBackward() {{
+            if (currentStep > 0) {{
+                currentStep--;
+                renderGrid();
+            }}
+        }}
+
+        function togglePlay() {{
+            const btn = document.getElementById('btn-play');
+            if (isPlaying) {{
+                clearInterval(playInterval);
+                isPlaying = false;
+                btn.textContent = '▶️ Play';
+                btn.classList.remove('playing');
+            }} else {{
+                isPlaying = true;
+                btn.textContent = '⏸️ Pause';
+                btn.classList.add('playing');
+                playInterval = setInterval(() => {{
+                    if (currentStep >= {total_steps - 1}) {{
+                        clearInterval(playInterval);
+                        isPlaying = false;
+                        btn.textContent = '▶️ Play';
+                        btn.classList.remove('playing');
+                        return;
+                    }}
+                    stepForward();
+               }}, playSpeed);
+            }}
+        }}
+
+        // Event listeners
+        document.getElementById('btn-first').addEventListener('click', () => goToStep(0));
+        document.getElementById('btn-prev').addEventListener('click', stepBackward);
+        document.getElementById('btn-play').addEventListener('click', togglePlay);
+        document.getElementById('btn-next').addEventListener('click', stepForward);
+        document.getElementById('btn-last').addEventListener('click', () => goToStep({total_steps - 1}));
+
+        document.getElementById('slider').addEventListener('input', (e) => {{
+            goToStep(parseInt(e.target.value));
+        }});
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'ArrowRight') {{
+                stepForward();
+            }} else if (e.key === 'ArrowLeft') {{
+                stepBackward();
+            }} else if (e.key === ' ') {{
+                e.preventDefault();
+                togglePlay();
+            }}
+        }});
+
+        // Initialize
+        renderGrid();
+    </script>
+</body>
+</html>
+"""
+
+    output_file = "interactive_blocks.html"
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+    print(f"✅ 成功生成互動式視覺化檔案！")
+    print(f"📍 已儲存為: {output_file}")
+    print(f"🎮 控制方式：")
+    print(f"   ⏯️  按鈕：播放/暫停、上一步、下一步、首步、末步")
+    print(f"   🎚️  滑桿：拖曳或點擊跳轉步驟")
+    print(f"   ⌨️  鍵盤：← → 方向鍵切換步驟，空白鍵播放/暫停")
 
 
 if __name__ == "__main__":
-    # 請確認 output.txt 與此腳本在同一資料夾
-    all_steps, num_blocks, max_seq_id = parse_output_file("output.txt")
+    all_steps, num_blocks = parse_output_file("output.txt")
     print(f"📊 總共解析 {len(all_steps)} 個 steps")
-    visualize_with_plotly(all_steps, num_blocks=num_blocks, cols=30)
+    generate_html_visualization(all_steps, num_blocks, cols=10)  # adjust cols as needed

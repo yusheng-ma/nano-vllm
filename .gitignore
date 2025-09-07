@@ -194,5 +194,5 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-block_visualization.html
+*.html
 output.txt

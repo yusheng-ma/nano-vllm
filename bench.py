@@ -6,10 +6,11 @@ from nanovllm import LLM, SamplingParams
 
 
 def main():
+    # consider block size is 256
     seed(0)
-    num_seqs = 1
-    max_input_len = 128
-    max_ouput_len = 128
+    num_seqs = 2
+    max_input_len = 512
+    max_ouput_len = 512
 
     path = os.path.expanduser("~/huggingface/Qwen3-0.6B/")
     llm = LLM(path, enforce_eager=False, max_model_len=4096)
