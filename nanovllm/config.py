@@ -17,6 +17,11 @@ class Config:
     kvcache_block_size: int = 256
     num_kvcache_blocks: int = -1
 
+    # print?
+    DEBUG_SCHEDULER = False  # ← 控制排程器 debug
+    DEBUG_BLOCK_MANAGER = True
+    DEBUG_PREEMPT = True
+
     def __post_init__(self):
         assert os.path.isdir(self.model)
         assert self.kvcache_block_size % 256 == 0

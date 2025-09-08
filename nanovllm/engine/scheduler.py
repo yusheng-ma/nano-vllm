@@ -44,9 +44,16 @@ class Scheduler:
         # decode
         while self.running and num_seqs < self.max_num_seqs:
             seq = self.running.popleft()
+            if Config.DEBUG_SCHEDULER:
+                print(f"Trying to append for seq {seq.seq_id}, can_append? {self.block_manager.can_append(seq)}")
             while not self.block_manager.can_append(seq):
+                if Config.DEBUG_PREEMPT:
+                    print(f"[BLOCK SHORTAGE] seq {seq.seq_id} needs to append but no free blocks!")
                 if self.running:
-                    self.preempt(self.running.pop())
+                    victim = self.running.pop()
+                    if Config.DEBUG_PREEMPT:
+                        print(f"  ➤ Preempting victim seq {victim.seq_id} to free blocks...")
+                    self.preempt(victim)
                 else:
                     self.preempt(seq)
                     break
@@ -59,6 +66,11 @@ class Scheduler:
         return scheduled_seqs, False
 
     def preempt(self, seq: Sequence):
+        if Config.DEBUG_PREEMPT:
+            print(f"[PREEMPT] seq {seq.seq_id:2d} | "
+                f"status: {seq.status.name:8s} | "
+                f"tokens: {seq.num_tokens:4d} (prompt: {seq.num_prompt_tokens:3d}, comp: {seq.num_completion_tokens:3d}) | "
+                f"blocks: {len(seq.block_table):2d} {seq.block_table}")
         seq.status = SequenceStatus.WAITING
         self.block_manager.deallocate(seq)
         self.waiting.appendleft(seq)

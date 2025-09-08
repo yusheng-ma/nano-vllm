@@ -3,7 +3,7 @@ import xxhash
 import numpy as np
 
 from nanovllm.engine.sequence import Sequence
-
+from nanovllm.config import Config
 
 class Block:
 
@@ -87,6 +87,8 @@ class BlockManager:
             block.ref_count -= 1
             if block.ref_count == 0:
                 self._deallocate_block(block_id)
+            if Config.DEBUG_BLOCK_MANAGER:
+                print(f"  [FREE] block {block_id} from seq {seq.seq_id}")
         seq.num_cached_tokens = 0
         seq.block_table.clear()
 
