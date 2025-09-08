@@ -247,16 +247,40 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
         let playInterval = null;
         const playSpeed = 300;
 
+        // 🚀 Cache DOM elements after first render
+        let blockElements = []; // Array of block divs, indexed by block_id
+
         function renderGrid() {{
             const grid = document.getElementById('grid');
-            grid.innerHTML = '';
-            grid.style.gridTemplateColumns = `repeat(${{cols}}, 40px)`;
 
+            // 🧱 First time: create all blocks and cache them
+            if (blockElements.length === 0) {{
+                grid.innerHTML = '';
+                grid.style.gridTemplateColumns = `repeat(${{cols}}, 40px)`;
+                for (let i = 0; i < numBlocks; i++) {{
+                    const block = document.createElement('div');
+                    block.className = 'block';
+                    block.id = `block-${{i}}`;
+
+                    // Create tooltip once
+                    const tooltip = document.createElement('div');
+                    tooltip.className = 'tooltip';
+                    block.appendChild(tooltip);
+
+                    grid.appendChild(block);
+                    blockElements.push({{ block, tooltip }});
+                }}
+            }}
+
+            // 🔄 Update content only — do NOT recreate elements
             const data = stepsData[currentStep];
             for (let i = 0; i < numBlocks; i++) {{
-                const block = document.createElement('div');
-                block.className = 'block';
+                const {{ block, tooltip }} = blockElements[i];
                 const seqList = data[i] || [];
+
+                // Reset classes
+                block.className = 'block';
+                tooltip.textContent = '';
 
                 if (seqList.length > 0) {{
                     block.classList.add('occupied');
@@ -264,20 +288,17 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
                         block.textContent = seqList[0];
                         block.title = `Block ${{i}} | Seq: ${{seqList[0]}}`;
                     }} else {{
-                        // Shared block — show ★ and tooltip
+                        // Shared block
                         block.classList.add('shared');
                         block.textContent = "★";
-                        const tooltip = document.createElement('div');
-                        tooltip.className = 'tooltip';
-                        tooltip.textContent = `Shared by: ${{seqList.join(', ')}}`;
-                        block.appendChild(tooltip);
-                        block.title = `Block ${{i}} | Shared by: ${{seqList.join(', ')}}`;
+                        const sharedText = `Shared by: ${{seqList.join(', ')}}`;
+                        tooltip.textContent = sharedText;
+                        block.title = `Block ${{i}} | ${{sharedText}}`;
                     }}
                 }} else {{
+                    block.textContent = '';
                     block.title = `Block ${{i}} | Free`;
                 }}
-
-                grid.appendChild(block);
             }}
 
             document.getElementById('step-display').textContent = `Step ${{currentStep}} / {total_steps - 1}`;
