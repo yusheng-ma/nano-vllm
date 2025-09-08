@@ -1,4 +1,4 @@
-# visualize_blocks.py
+# visualize_blocks.py (Final Clean Version for Prefix Sharing)
 import json
 import re
 import os
@@ -19,7 +19,7 @@ def parse_output_file(filename):
     num_kv_cache_block = int(match.group(1))
     print(f"🔢 Auto-detected num_blocks = {num_kv_cache_block}")
 
-    # 3. Next line: {"num_seqs": 1} → optional, for info
+    # 3. Next line: {"num_seqs": 2} → optional, for info
     second_data_line = lines[1].strip()
     num_seqs = 1  # default
     try:
@@ -45,10 +45,10 @@ def parse_output_file(filename):
 
     for step in steps:
         lines = step.strip().splitlines()
-        step_data = {}
+        step_data = {}  # block_id -> set(seq_ids)
         for line in lines:
             line = line.strip()
-            if not line or not re.match(r'\d+\s+\[\s*-?\d+', line):
+            if not line or not re.match(r'\d+\s+\[.*\]', line):
                 continue
             try:
                 match = re.match(r'(\d+)\s+(\[.*\])', line)
@@ -60,7 +60,9 @@ def parse_output_file(filename):
                 block_list = list(map(int, re.findall(r'-?\d+', block_str)))
                 for block_idx in block_list:
                     if block_idx != -1:
-                        step_data[block_idx] = seq_id
+                        if block_idx not in step_data:
+                            step_data[block_idx] = set()
+                        step_data[block_idx].add(seq_id)
             except Exception as e:
                 print(f"⚠️ Error parsing line: {line}, error: {e}")
                 continue
@@ -70,26 +72,25 @@ def parse_output_file(filename):
     min_seq_id = min(all_seq_ids) if all_seq_ids else 0
     print(f"🆔 Observed seq_ids: {sorted(all_seq_ids)}")
 
-    return all_steps, num_kv_cache_block
+    return all_steps, num_kv_cache_block, sorted(all_seq_ids)
 
 
-def generate_html_visualization(all_steps, num_blocks, cols=10):
+def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
     rows = (num_blocks + cols - 1) // cols
 
-    # Prepare data for JS
+    # Prepare data for JS: each step is a list of lists (or empty list for free)
     steps_data = []
     for step_data in all_steps:
-        grid = [-1] * num_blocks  # -1 means free
-        for block_idx, seq_id in step_data.items():
+        grid = [[] for _ in range(num_blocks)]  # each block holds list of seq_ids
+        for block_idx, seq_id_set in step_data.items():
             if block_idx < num_blocks:
-                grid[block_idx] = seq_id
+                grid[block_idx] = sorted(list(seq_id_set))  # sorted for consistency
         steps_data.append(grid)
 
     # Generate JS array
     js_steps_data = json.dumps(steps_data)
     total_steps = len(all_steps)
 
-    # Generate HTML with embedded JS
     html_content = f"""
 <!DOCTYPE html>
 <html>
@@ -108,30 +109,61 @@ def generate_html_visualization(all_steps, num_blocks, cols=10):
         }}
         .grid {{
             display: grid;
-            grid-template-columns: repeat({cols}, 30px);
+            grid-template-columns: repeat({cols}, 40px);
             gap: 2px;
             margin-bottom: 20px;
             background: white;
-            padding: 10px;
+            padding: 15px;
             border-radius: 8px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }}
         .block {{
-            width: 30px;
-            height: 30px;
+            width: 40px;
+            height: 40px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
+            font-size: 14px;
             font-family: 'Courier New', monospace;
             border: 1px solid #ddd;
             background-color: white;
             cursor: default;
             transition: all 0.2s ease;
+            position: relative;
         }}
         .block.occupied {{
-            background-color: #e9e9e9;
+            background-color: #f8f8f8;
             font-weight: bold;
+        }}
+        .block.shared {{
+            background-color: #fff3cd !important;
+            border: 2px solid #ffd54f;
+            box-shadow: none;
+        }}
+        .block:hover {{
+            z-index: 10;
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }}
+        .tooltip {{
+            visibility: hidden;
+            position: absolute;
+            bottom: 110%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }}
+        .block:hover .tooltip {{
+            visibility: visible;
+            opacity: 1;
         }}
         .controls {{
             margin: 20px 0;
@@ -188,6 +220,7 @@ def generate_html_visualization(all_steps, num_blocks, cols=10):
 </head>
 <body>
     <h2>KV Cache Block Table</h2>
+
     <div class="controls">
         <button id="btn-first" title="First Step">⏮️ First</button>
         <button id="btn-prev" title="Previous Step">⬅️ Back</button>
@@ -212,24 +245,38 @@ def generate_html_visualization(all_steps, num_blocks, cols=10):
         let currentStep = 0;
         let isPlaying = false;
         let playInterval = null;
-        const playSpeed = 200; // ms per frame
+        const playSpeed = 300;
 
         function renderGrid() {{
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
-            grid.style.gridTemplateColumns = `repeat(${{cols}}, 30px)`;
+            grid.style.gridTemplateColumns = `repeat(${{cols}}, 40px)`;
 
             const data = stepsData[currentStep];
             for (let i = 0; i < numBlocks; i++) {{
                 const block = document.createElement('div');
                 block.className = 'block';
-                if (data[i] !== -1) {{
+                const seqList = data[i] || [];
+
+                if (seqList.length > 0) {{
                     block.classList.add('occupied');
-                    block.textContent = data[i];
-                    block.title = `Block ${{i}} | Seq ID: ${{data[i]}}`;
+                    if (seqList.length === 1) {{
+                        block.textContent = seqList[0];
+                        block.title = `Block ${{i}} | Seq: ${{seqList[0]}}`;
+                    }} else {{
+                        // Shared block — show ★ and tooltip
+                        block.classList.add('shared');
+                        block.textContent = "★";
+                        const tooltip = document.createElement('div');
+                        tooltip.className = 'tooltip';
+                        tooltip.textContent = `Shared by: ${{seqList.join(', ')}}`;
+                        block.appendChild(tooltip);
+                        block.title = `Block ${{i}} | Shared by: ${{seqList.join(', ')}}`;
+                    }}
                 }} else {{
                     block.title = `Block ${{i}} | Free`;
                 }}
+
                 grid.appendChild(block);
             }}
 
@@ -280,7 +327,7 @@ def generate_html_visualization(all_steps, num_blocks, cols=10):
                         return;
                     }}
                     stepForward();
-               }}, playSpeed);
+                }}, playSpeed);
             }}
         }}
 
@@ -314,19 +361,21 @@ def generate_html_visualization(all_steps, num_blocks, cols=10):
 </html>
 """
 
-    output_file = "interactive_blocks.html"
+    output_file = "interactive_blocks.html"  # ← 保持原檔名
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(html_content)
 
-    print(f"✅ 成功生成互動式視覺化檔案！")
-    print(f"📍 已儲存為: {output_file}")
+    print(f"✅ 成功生成支援 prefix sharing 的互動式視覺化檔案！")
+    print(f"📍 已儲存為: interactive_blocks.html")
     print(f"🎮 控制方式：")
     print(f"   ⏯️  按鈕：播放/暫停、上一步、下一步、首步、末步")
     print(f"   🎚️  滑桿：拖曳或點擊跳轉步驟")
     print(f"   ⌨️  鍵盤：← → 方向鍵切換步驟，空白鍵播放/暫停")
+    print(f"   🟡 黃色邊框方塊 = 共享 block，滑鼠懸停可看共享序列列表")
 
 
 if __name__ == "__main__":
-    all_steps, num_blocks = parse_output_file("output.txt")
+    all_steps, num_blocks, seq_ids = parse_output_file("output.txt")
     print(f"📊 總共解析 {len(all_steps)} 個 steps")
-    generate_html_visualization(all_steps, num_blocks, cols=10)  # adjust cols as needed
+    print(f"👥 涉及序列: {seq_ids}")
+    generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10)
