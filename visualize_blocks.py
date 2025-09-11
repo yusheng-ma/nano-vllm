@@ -75,19 +75,16 @@ def parse_output_file(filename):
     return all_steps, num_kv_cache_block, sorted(all_seq_ids)
 
 
-def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
-    rows = (num_blocks + cols - 1) // cols
-
-    # Prepare data for JS: each step is a list of lists (or empty list for free)
+def generate_html_visualization(all_steps, num_blocks, seq_ids):
+    # Prepare data for JS
     steps_data = []
     for step_data in all_steps:
-        grid = [[] for _ in range(num_blocks)]  # each block holds list of seq_ids
+        grid = [[] for _ in range(num_blocks)]
         for block_idx, seq_id_set in step_data.items():
             if block_idx < num_blocks:
-                grid[block_idx] = sorted(list(seq_id_set))  # sorted for consistency
+                grid[block_idx] = sorted(list(seq_id_set))
         steps_data.append(grid)
 
-    # Generate JS array
     js_steps_data = json.dumps(steps_data)
     total_steps = len(all_steps)
 
@@ -99,36 +96,38 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 20px;
+            margin: 10px;
             background-color: #fafafa;
             color: #333;
+            overflow-x: auto; /* 允許水平滾動 */
         }}
         #container {{
             display: inline-block;
-            margin-top: 20px;
+            margin-top: 10px;
         }}
         .grid {{
-            display: grid;
-            grid-template-columns: repeat({cols}, 40px);
-            gap: 2px;
-            margin-bottom: 20px;
+            display: flex; /* 改用 flex 更穩定 */
+            flex-wrap: wrap; /* 每行滿了就換行 */
+            gap: 1px;
             background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 8px;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            width: 100%; /* ← 強制佔滿父容器 */
+            min-width: 100%; /* ← 防止縮小 */
         }}
         .block {{
-            width: 40px;
-            height: 40px;
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+            font-size: 10px;
             font-family: 'Courier New', monospace;
-            border: 1px solid #ddd;
+            border: 1px solid #eee;
             background-color: white;
             cursor: default;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
             position: relative;
         }}
         .block.occupied {{
@@ -137,13 +136,13 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
         }}
         .block.shared {{
             background-color: #fff3cd !important;
-            border: 2px solid #ffd54f;
+            border: 1px solid #ffd54f;
             box-shadow: none;
         }}
         .block:hover {{
             z-index: 10;
-            transform: scale(1.05);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            transform: scale(1.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
         }}
         .tooltip {{
             visibility: hidden;
@@ -153,12 +152,12 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             transform: translateX(-50%);
             background: #333;
             color: white;
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
             white-space: nowrap;
             opacity: 0;
-            transition: opacity 0.3s;
+            transition: opacity 0.2s;
             pointer-events: none;
         }}
         .block:hover .tooltip {{
@@ -166,23 +165,23 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             opacity: 1;
         }}
         .controls {{
-            margin: 20px 0;
             display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
+            flex-wrap: nowrap;
             align-items: center;
+            gap: 6px;
             background: white;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 8px 12px;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 8px;
         }}
         button {{
-            padding: 8px 16px;
-            font-size: 14px;
+            padding: 4px 8px;
+            font-size: 12px;
             cursor: pointer;
             border: 1px solid #ccc;
             background: #f8f8f8;
-            border-radius: 6px;
+            border-radius: 4px;
             transition: background 0.2s;
         }}
         button:hover {{
@@ -198,40 +197,40 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             color: #155724;
         }}
         #step-display {{
-            font-size: 18px;
-            font-weight: bold;
-            margin: 0 10px;
-            min-width: 120px;
+            font-size: 14px;
+            font-weight: 500;
+            min-width: 100px;
             text-align: center;
+            margin: 0 6px;
         }}
         #slider {{
-            width: 100%;
-            max-width: 600px;
+            width: 300px;
         }}
         .slider-container {{
-            width: 100%;
-            max-width: 600px;
-            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }}
         h2 {{
             color: #2c3e50;
+            margin: 5px 0 10px 0;
+            font-size: 18px;
         }}
     </style>
 </head>
 <body>
-    <h2>KV Cache Block Table</h2>
+    <h2>KV Cache Block Table (Blocks: {num_blocks})</h2>
 
     <div class="controls">
-        <button id="btn-first" title="First Step">⏮️ First</button>
-        <button id="btn-prev" title="Previous Step">⬅️ Back</button>
-        <button id="btn-play" title="Play/Pause">▶️ Play</button>
-        <button id="btn-next" title="Next Step">➡️ Next</button>
-        <button id="btn-last" title="Last Step">⏭️ Last</button>
+        <button id="btn-first" title="First Step">⏮️</button>
+        <button id="btn-prev" title="Previous Step">⬅️</button>
+        <button id="btn-play" title="Play/Pause">▶️</button>
+        <button id="btn-next" title="Next Step">➡️</button>
+        <button id="btn-last" title="Last Step">⏭️</button>
         <span id="step-display">Step 0 / {total_steps - 1}</span>
-    </div>
-
-    <div class="slider-container">
-        <input type="range" id="slider" min="0" max="{total_steps - 1}" value="0" step="1">
+        <div class="slider-container">
+            <input type="range" id="slider" min="0" max="{total_steps - 1}" value="0" step="1">
+        </div>
     </div>
 
     <div id="container">
@@ -241,28 +240,23 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
     <script>
         const stepsData = {js_steps_data};
         const numBlocks = {num_blocks};
-        const cols = {cols};
         let currentStep = 0;
         let isPlaying = false;
         let playInterval = null;
         const playSpeed = 300;
 
-        // 🚀 Cache DOM elements after first render
-        let blockElements = []; // Array of block divs, indexed by block_id
+        let blockElements = [];
 
         function renderGrid() {{
             const grid = document.getElementById('grid');
 
-            // 🧱 First time: create all blocks and cache them
             if (blockElements.length === 0) {{
                 grid.innerHTML = '';
-                grid.style.gridTemplateColumns = `repeat(${{cols}}, 40px)`;
                 for (let i = 0; i < numBlocks; i++) {{
                     const block = document.createElement('div');
                     block.className = 'block';
                     block.id = `block-${{i}}`;
 
-                    // Create tooltip once
                     const tooltip = document.createElement('div');
                     tooltip.className = 'tooltip';
                     block.appendChild(tooltip);
@@ -272,13 +266,11 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
                 }}
             }}
 
-            // 🔄 Update content only — do NOT recreate elements
             const data = stepsData[currentStep];
             for (let i = 0; i < numBlocks; i++) {{
                 const {{ block, tooltip }} = blockElements[i];
                 const seqList = data[i] || [];
 
-                // Reset classes
                 block.className = 'block';
                 tooltip.textContent = '';
 
@@ -288,7 +280,6 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
                         block.textContent = seqList[0];
                         block.title = `Block ${{i}} | Seq: ${{seqList[0]}}`;
                     }} else {{
-                        // Shared block
                         block.classList.add('shared');
                         block.textContent = "★";
                         const sharedText = `Shared by: ${{seqList.join(', ')}}`;
@@ -304,7 +295,6 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             document.getElementById('step-display').textContent = `Step ${{currentStep}} / {total_steps - 1}`;
             document.getElementById('slider').value = currentStep;
 
-            // Update button states
             document.getElementById('btn-prev').disabled = currentStep === 0;
             document.getElementById('btn-next').disabled = currentStep === {total_steps - 1};
         }}
@@ -333,17 +323,17 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             if (isPlaying) {{
                 clearInterval(playInterval);
                 isPlaying = false;
-                btn.textContent = '▶️ Play';
+                btn.textContent = '▶️';
                 btn.classList.remove('playing');
             }} else {{
                 isPlaying = true;
-                btn.textContent = '⏸️ Pause';
+                btn.textContent = '⏸️';
                 btn.classList.add('playing');
                 playInterval = setInterval(() => {{
                     if (currentStep >= {total_steps - 1}) {{
                         clearInterval(playInterval);
                         isPlaying = false;
-                        btn.textContent = '▶️ Play';
+                        btn.textContent = '▶️';
                         btn.classList.remove('playing');
                         return;
                     }}
@@ -352,7 +342,6 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             }}
         }}
 
-        // Event listeners
         document.getElementById('btn-first').addEventListener('click', () => goToStep(0));
         document.getElementById('btn-prev').addEventListener('click', stepBackward);
         document.getElementById('btn-play').addEventListener('click', togglePlay);
@@ -363,7 +352,6 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             goToStep(parseInt(e.target.value));
         }});
 
-        // Keyboard navigation
         document.addEventListener('keydown', (e) => {{
             if (e.key === 'ArrowRight') {{
                 stepForward();
@@ -375,28 +363,26 @@ def generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10):
             }}
         }});
 
-        // Initialize
         renderGrid();
     </script>
 </body>
 </html>
 """
-
-    output_file = "interactive_blocks.html"  # ← 保持原檔名
+    output_file = "interactive_blocks.html"
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(html_content)
 
-    print(f"✅ 成功生成支援 prefix sharing 的互動式視覺化檔案！")
+    print(f"✅ 成功生成滿版顯示的 KV Cache Block 視覺化！")
     print(f"📍 已儲存為: interactive_blocks.html")
-    print(f"🎮 控制方式：")
-    print(f"   ⏯️  按鈕：播放/暫停、上一步、下一步、首步、末步")
-    print(f"   🎚️  滑桿：拖曳或點擊跳轉步驟")
-    print(f"   ⌨️  鍵盤：← → 方向鍵切換步驟，空白鍵播放/暫停")
-    print(f"   🟡 黃色邊框方塊 = 共享 block，滑鼠懸停可看共享序列列表")
+    print(f"🎮 特性：")
+    print(f"   📏 所有 blocks 自動填滿整行，無右側留白")
+    print(f"   🌐 適應任何螢幕寬度，橫向可捲動查看")
+    print(f"   🟡 黃色邊框 = 共享 block，懸停看共享序列")
+    print(f"   ⌨️  鍵盤控制與播放功能保留")
 
 
 if __name__ == "__main__":
     all_steps, num_blocks, seq_ids = parse_output_file("output.txt")
     print(f"📊 總共解析 {len(all_steps)} 個 steps")
     print(f"👥 涉及序列: {seq_ids}")
-    generate_html_visualization(all_steps, num_blocks, seq_ids, cols=10)
+    generate_html_visualization(all_steps, num_blocks, seq_ids)

@@ -18,9 +18,9 @@ class Config:
     num_kvcache_blocks: int = -1
 
     # print?
-    DEBUG_SCHEDULER = True  # ← 控制排程器 debug
-    DEBUG_BLOCK_MANAGER = True
-    DEBUG_PREEMPT = True
+    DEBUG_SCHEDULER = False  # ← 控制排程器 debug
+    DEBUG_BLOCK_MANAGER = False
+    DEBUG_PREEMPT = False
 
     def __post_init__(self):
         assert os.path.isdir(self.model)
