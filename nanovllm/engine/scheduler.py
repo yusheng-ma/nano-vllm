@@ -27,11 +27,16 @@ class Scheduler:
         scheduled_seqs = []
         num_seqs = 0
         num_batched_tokens = 0
+        break_reason = None
         while self.waiting and num_seqs < self.max_num_seqs:
             seq = self.waiting[0]
             if Config.DEBUG_SCHEDULER:
                 print(f"Trying to prefill for seq {seq.seq_id}, can_allocate? {self.block_manager.can_allocate(seq)}")
-            if num_batched_tokens + len(seq) > self.max_num_batched_tokens or not self.block_manager.can_allocate(seq):
+            if num_batched_tokens + len(seq) > self.max_num_batched_tokens:
+                break_reason = "token budget exceeded"
+                break
+            if not self.block_manager.can_allocate(seq):
+                break_reason = "cannot allocate blocks"
                 break
             num_seqs += 1
             self.block_manager.allocate(seq)
@@ -40,6 +45,13 @@ class Scheduler:
             self.waiting.popleft()
             self.running.append(seq)
             scheduled_seqs.append(seq)
+        else:
+            if not self.waiting:
+                break_reason = "no more waiting sequences"
+            else:
+                break_reason = "max num seqs reached"
+        if Config.DEBUG_SCHEDULER and break_reason:
+            print(f"[Scheduler] Prefill loop exited because: {break_reason}")
         if scheduled_seqs:
             return scheduled_seqs, True
 

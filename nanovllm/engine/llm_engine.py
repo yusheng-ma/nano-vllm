@@ -12,6 +12,17 @@ from nanovllm.engine.scheduler import Scheduler
 from nanovllm.engine.model_runner import ModelRunner
 
 
+_global_step_counter = 0
+
+def get_global_step():
+    global _global_step_counter
+    return _global_step_counter
+
+def increment_global_step():
+    global _global_step_counter
+    _global_step_counter += 1
+
+
 class LLMEngine:
 
     def __init__(self, model, **kwargs):
@@ -46,6 +57,8 @@ class LLMEngine:
         self.scheduler.add(seq)
 
     def step(self):
+        print("-" * 20 + f" step{get_global_step()}")
+        increment_global_step()
         seqs, is_prefill = self.scheduler.schedule()
         token_ids = self.model_runner.call("run", seqs, is_prefill)
         self.scheduler.postprocess(seqs, token_ids)
