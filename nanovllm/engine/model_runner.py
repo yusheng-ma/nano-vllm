@@ -140,6 +140,8 @@ class ModelRunner:
         slot_mapping = []
         block_tables = None
         for seq in seqs:
+            if Config.DEBUG_BLOCK_MANAGER:
+                print(f"Seq {seq.seq_id}: len={len(seq)}, num_cached_tokens={seq.num_cached_tokens}, has_block_table={seq.block_table is not None}")
             seqlen = len(seq)
             input_ids.extend(seq[seq.num_cached_tokens:])
             positions.extend(list(range(seq.num_cached_tokens, seqlen)))
