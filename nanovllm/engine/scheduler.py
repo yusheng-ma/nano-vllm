@@ -32,6 +32,9 @@ class Scheduler:
             seq = self.waiting[0]
             if Config.DEBUG_SCHEDULER:
                 print(f"Trying to prefill for seq {seq.seq_id}, can_allocate? {self.block_manager.can_allocate(seq)}")
+            # 🟢 新增：印出 prompt 開頭 tokens，幫助比對內容
+            if Config.DEBUG_BLOCK_MANAGER_LV2:
+                print(f"  🔍 Prompt prefix: {seq.token_ids[:10]}...")
             if num_batched_tokens + len(seq) > self.max_num_batched_tokens:
                 break_reason = "token budget exceeded"
                 break
@@ -39,6 +42,8 @@ class Scheduler:
                 break_reason = "cannot allocate blocks"
                 break
             num_seqs += 1
+            if Config.DEBUG_BLOCK_MANAGER_LV2:
+                print(f"Actually allocating for seq {seq.seq_id}")
             self.block_manager.allocate(seq)
             num_batched_tokens += len(seq) - seq.num_cached_tokens
             seq.status = SequenceStatus.RUNNING
@@ -73,6 +78,8 @@ class Scheduler:
                     break
             else:
                 num_seqs += 1
+                if Config.DEBUG_BLOCK_MANAGER_LV2:
+                    print(f"Actually may_appending for seq {seq.seq_id}")
                 self.block_manager.may_append(seq)
                 scheduled_seqs.append(seq)
         assert scheduled_seqs
